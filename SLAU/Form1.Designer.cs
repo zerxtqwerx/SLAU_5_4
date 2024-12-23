@@ -1,4 +1,4 @@
-﻿namespace IterativeMethodsZedGraph
+﻿namespace MatrixSolver
 {
     partial class MainForm
     {
@@ -47,7 +47,6 @@
             this.zedGraphControl.Size = new System.Drawing.Size(774, 424);
             this.zedGraphControl.TabIndex = 0;
             this.zedGraphControl.UseExtendedPrintDialog = true;
-            this.zedGraphControl.Load += new System.EventHandler(this.zedGraphControl_Load);
             // 
             // MainForm
             // 

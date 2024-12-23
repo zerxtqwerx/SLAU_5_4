@@ -4,101 +4,150 @@ using System.Linq;
 using System.Windows.Forms;
 using ZedGraph;
 
-namespace IterativeMethodsZedGraph
+namespace MatrixSolver
 {
     public partial class MainForm : Form
     {
         public MainForm()
         {
             InitializeComponent();
-            SolveAndPlot();
+            /*// Чтение размерности
+              int n;
+              if (!int.TryParse(txtSize.Text, out n) || n <= 0)
+              {
+                  MessageBox.Show("Введите корректное значение размерности.");
+                  return;
+              }*/
+            int n = 3;
+            double[][] A = new double[n][];
+            A[0] = new double[] { 1, 2, 4, -10 };
+            A[1] = new double[] { 2, 13, 23, -50 };
+            A[2] = new double[] { 4, 23, 77, -150 };
+
+            double[] b = { 2.222, 0.555, 1.666 };
+
+            double[] x0_1 = new double[n];
+            double[] x0_2 = Enumerable.Repeat(1.0, n).ToArray();
+
+            // Решение с методом Якоби
+            var (solutionJacobi1, normJacobi1) = Jacobi(A, b, x0_1);
+            var (solutionJacobi2, normJacobi2) = Jacobi(A, b, x0_2);
+
+            // Решение с методом минимальных невязок
+            var (solutionMinRes1, normMinRes1) = MinResidualMethod(A, b, x0_1);
+            var (solutionMinRes2, normMinRes2) = MinResidualMethod(A, b, x0_2);
+
+           /* MessageBox.Show($"Решение методом Якоби (начальное приближение 1): ", Convert.ToString(solutionJacobi1));
+            MessageBox.Show($"Решение методом Якоби (начальное приближение 2): ", Convert.ToString(solutionJacobi2));
+            MessageBox.Show($"Решение методом минимальных невязок (начальное приближение 1): ", Convert.ToString(solutionMinRes1));
+            MessageBox.Show($"Решение методом минимальных невязок (начальное приближение 2): ", Convert.ToString(solutionMinRes2));*/
+
+            PlotGraph(normJacobi1, normJacobi2, normMinRes1, normMinRes2);
         }
 
-        private void SolveAndPlot()
+        private double DotProduct(double[] v1, double[] v2)
         {
-            double[,] A = {
-                { 1, 2, 4, -10 },
-                { 2, 13, 23, -50 },
-                { 4, 23, 77, -150 },
-            };
+            return v1.Zip(v2, (a, b) => a * b).Sum();
+        }
 
-            double[] b = { 15, 10, 10, 10 };
-            double[] initialGuess = { 0, 0, 0, 0 };
-            double epsilon = 1e-6;
+        private double Norm(double[] vector)
+        {
+            return Math.Sqrt(vector.Sum(x => x * x));
+        }
 
-            // Списки для хранения значений и остатков
-            List<double> jacobiResiduals = SolveUsingJacobi(A, b, initialGuess, epsilon);
-            List<double> seidelResiduals = SolveUsingSeidel(A, b, initialGuess, epsilon);
+        private double[] MatrixVectorProduct(double[][] A, double[] x)
+        {
+            return A.Select(row => DotProduct(row, x)).ToArray();
+        }
 
-            // Создание графика
-            GraphPane pane = zedGraphControl.GraphPane;
-            pane.Title.Text = "Зависимость нормы невязки от номера итерации";
-            pane.XAxis.Title.Text = "Номер итерации";
+        private double[] VectorSubtract(double[] v1, double[] v2)
+        {
+            return v1.Zip(v2, (a, b) => a - b).ToArray();
+        }
+
+        private double[] VectorAdd(double[] v1, double[] v2)
+        {
+            return v1.Zip(v2, (a, b) => a + b).ToArray();
+        }
+
+        private double[] VectorScale(double[] v, double scalar)
+        {
+            return v.Select(a => a * scalar).ToArray();
+        }
+
+        private (double[], List<double>) Jacobi(double[][] A, double[] b, double[] x0, double tol = 0.0001, int maxIterations = 100)
+        {
+            int n = b.Length;
+            double[] x = (double[])x0.Clone();
+            List<double> norms = new List<double>();
+
+            for (int k = 0; k < maxIterations; k++)
+            {
+                double[] x_new = new double[n];
+                for (int i = 0; i < n; i++)
+                {
+                    double sum1 = DotProduct(A[i].Take(i).ToArray(), x.Take(i).ToArray());
+                    double sum2 = DotProduct(A[i].Skip(i + 1).ToArray(), x.Skip(i + 1).ToArray());
+                    x_new[i] = (b[i] - sum1 - sum2) / A[i][i];
+                }
+
+                double[] diff_vector = VectorSubtract(x_new, x);
+                norms.Add(Norm(diff_vector));
+                if (Norm(diff_vector) < tol) break;
+
+                x = x_new;
+            }
+            return (x, norms);
+        }
+
+        private (double[], List<double>) MinResidualMethod(double[][] A, double[] b, double[] x0, double tol = 0.0001, int maxIterations = 100)
+        {
+            double[] x = (double[])x0.Clone();
+            List<double> norms = new List<double>();
+
+            for (int k = 0; k < maxIterations; k++)
+            {
+                double[] r = VectorSubtract(b, MatrixVectorProduct(A, x));
+                double alpha = DotProduct(r, r) / DotProduct(r, MatrixVectorProduct(A, r));
+                x = VectorAdd(x, VectorScale(r, alpha));
+
+                double current_norm = Norm(r);
+                norms.Add(current_norm);
+                if (current_norm < tol) break;
+            }
+            return (x, norms);
+        }
+
+        private void PlotGraph(List<double> normJacobi1, List<double> normJacobi2, List<double> normMinRes1, List<double> normMinRes2)
+        {
+            GraphPane pane = new GraphPane();
+            pane.Title.Text = "Норма невязки";
+            pane.XAxis.Title.Text = "Итерации";
             pane.YAxis.Title.Text = "Норма невязки";
 
-            // Добавление данных метода Якоби
-            LineItem jacobiCurve = pane.AddCurve("Метод Якоби", Enumerable.Range(1, jacobiResiduals.Count).Select(x => (double)x).ToArray(), jacobiResiduals.ToArray(), System.Drawing.Color.Blue);
+            pane.AddCurve("Якоби, нач. прибл. 0", Enumerable.Range(0, normJacobi1.Count).Select(i => (double)i).ToArray(), normJacobi1.ToArray(), System.Drawing.Color.Blue);
+            pane.AddCurve("Якоби, нач. прибл. 1", Enumerable.Range(0, normJacobi2.Count).Select(i => (double)i).ToArray(), normJacobi2.ToArray(), System.Drawing.Color.Red);
+            pane.AddCurve("Мин. невязок, нач. прибл. 0", Enumerable.Range(0, normMinRes1.Count).Select(i => (double)i).ToArray(), normMinRes1.ToArray(), System.Drawing.Color.Green);
+            pane.AddCurve("Мин. невязок, нач. прибл. 1", Enumerable.Range(0, normMinRes2.Count).Select(i => (double)i).ToArray(), normMinRes2.ToArray(), System.Drawing.Color.Orange);
 
-            // Добавление данных метода Зейделя
-            LineItem seidelCurve = pane.AddCurve("Метод Зейделя", Enumerable.Range(1, seidelResiduals.Count).Select(x => (double)x).ToArray(), seidelResiduals.ToArray(), System.Drawing.Color.Red);
+            pane.YAxis.Scale.Min = 1e-10; // Установка минимального значения для логарифмической шкалы
+            pane.YAxis.Scale.Max = Math.Max(normJacobi1.Max(), Math.Max(normJacobi2.Max(), Math.Max(normMinRes1.Max(), normMinRes2.Max()))) * 10;
+            pane.YAxis.Type = AxisType.Log; // Логарифмическая шкала
 
-            // Отображение графика
-            zedGraphControl.AxisChange();
-            zedGraphControl.Refresh();
-        }
-
-        private List<double> SolveUsingJacobi(double[,] A, double[] b, double[] initialGuess, double epsilon)
-        {
-            int n = b.Length;
-            double[] x = (double[])initialGuess.Clone();
-            double[] xNew = new double[n];
-            List<double> residuals = new List<double>();
-
-            do
+            var graphControl = new ZedGraphControl
             {
-                for (int i = 0; i < n; i++)
-                {
-                    xNew[i] = (b[i] - Enumerable.Range(0, n).Where(j => j != i).Sum(j => A[i, j] * x[j])) / A[i, i];
-                }
+                GraphPane = pane,
+                Dock = DockStyle.Fill
+            };
 
-                double norm = Math.Sqrt(Enumerable.Range(0, n).Sum(i => Math.Pow(xNew[i] - x[i], 2)));
-                residuals.Add(norm);
-
-                x = (double[])xNew.Clone();
-
-            } while (Math.Max(residuals.Last(), Math.Abs((b[0] - A[0, 0] * x[0])) / b[0]) > epsilon);
-
-            return residuals;
-        }
-
-        private List<double> SolveUsingSeidel(double[,] A, double[] b, double[] initialGuess, double epsilon)
-        {
-            int n = b.Length;
-            double[] x = (double[])initialGuess.Clone();
-            List<double> residuals = new List<double>();
-
-            do
+            var form = new Form
             {
-                double maxDiff = 0;
-
-                for (int i = 0; i < n; i++)
-                {
-                    double xOld = x[i];
-                    x[i] = (b[i] - Enumerable.Range(0, n).Sum(j => A[i, j] * (j <= i ? x[j] : xOld))) / A[i, i];
-                    maxDiff = Math.Max(maxDiff, Math.Abs(x[i] - xOld));
-                }
-
-                residuals.Add(maxDiff);
-
-            } while (residuals.Last() > epsilon);
-
-            return residuals;
-        }
-
-        private void zedGraphControl_Load(object sender, EventArgs e)
-        {
-            InitializeComponent();
-            SolveAndPlot();
+                Text = "График",
+                WindowState = FormWindowState.Maximized
+            };
+            form.Controls.Add(graphControl);
+            form.Load += (s, e) => graphControl.AxisChange();
+            form.ShowDialog();
         }
     }
 }
